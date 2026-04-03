@@ -102,7 +102,7 @@ the module list is still complete.
 # 2. Create the SFX launcher
 chmod +x packaging/oomph-sfx/create-sfx-unix.sh
 packaging/oomph-sfx/create-sfx-unix.sh \
-    target/biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar \
+    target/biz.aQute.jpm.run-4.0.0*.jar \
     target/jre-image \
     target/jpm-linux-amd64.run
 
@@ -118,7 +118,7 @@ packaging/oomph-sfx/create-sfx-unix.sh \
 
 # 2. Create the SFX launcher
 pwsh -File packaging\oomph-sfx\create-sfx-windows.ps1 `
-     -JarFile "target\biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar" `
+     -JarFile "target\biz.aQute.jpm.run-4.0.0*.jar" `
      -JreDir  "target\jre-image" `
      -OutFile "target\jpm-windows-amd64.bat"
 

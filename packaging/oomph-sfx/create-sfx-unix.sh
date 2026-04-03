@@ -21,13 +21,12 @@
 # How it works (Oomph-inspired pattern):
 #   1. Copy jar + jre into a staging directory.
 #   2. Create a gzipped tar of the staging directory.
-#   3. Base64-encode the tarball.
-#   4. Write the stub (sfx-launcher.sh) followed by the encoded payload.
+#   3. Concatenate the stub (sfx-launcher.sh) and raw tarball payload.
 #   5. Mark the result executable.
 #
-# The resulting file is a valid shell script whose tail is the base64 payload.
-# The stub locates the __PAYLOAD__ line at runtime, decodes and extracts the
-# tarball to a temp dir, and exec-s java -jar jpm.jar.
+# The resulting file is a valid shell script whose tail is a raw binary
+# payload.tar.gz. The stub locates the __PAYLOAD__ line at runtime, extracts
+# the payload to a temp dir, and exec-s java -jar jpm.jar.
 
 set -euo pipefail
 
@@ -66,9 +65,9 @@ echo "==> Writing $OUTPUT_FILE …"
 # The stub already ends with the __PAYLOAD__ marker line.
 cp "$STUB_FILE" "$OUTPUT_FILE"
 
-# Append the base64-encoded tarball after the marker.
-# base64 wraps lines at 76 chars by default which tail -n handles correctly.
-base64 "$TARBALL" >> "$OUTPUT_FILE"
+# Append the raw payload tarball after the marker.
+# This mirrors the native Oomph concatenation style and avoids base64 overhead.
+cat "$TARBALL" >> "$OUTPUT_FILE"
 
 chmod +x "$OUTPUT_FILE"
 
