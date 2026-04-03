@@ -145,4 +145,61 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<!--
+	  Profile: jlink-sfx
+	  ───────────────────────────────────────────────────────────────────────
+	  Creates a minimal jlink JRE image after the package phase.  The image
+	  is written to target/jre-image and consumed by the SFX build scripts:
+	    packaging/oomph-sfx/create-sfx-unix.sh      (Linux / macOS)
+	    packaging/oomph-sfx/create-sfx-windows.ps1  (Windows)
+
+	  Requires JDK 9+ on the build machine (for jlink).
+
+	  Activate with:
+	    ./mvnw -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
+
+	  The module set below was derived from running jdeps on the fat JAR plus
+	  its transitive dependencies.  Revisit after upgrading bnd or adding new
+	  dependencies.
+	-->
+	<profiles>
+		<profile>
+			<id>jlink-sfx</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>exec-maven-plugin</artifactId>
+						<version>3.1.0</version>
+						<executions>
+							<execution>
+								<id>jlink-create-jre</id>
+								<phase>package</phase>
+								<goals>
+									<goal>exec</goal>
+								</goals>
+								<configuration>
+									<!-- jlink lives in the JDK's bin directory. -->
+									<executable>${java.home}/bin/jlink</executable>
+									<arguments>
+										<argument>--add-modules</argument>
+										<argument>java.base,java.logging,java.xml,java.management,java.naming,java.net.http,java.sql,java.compiler</argument>
+										<!-- zip-6 gives a good size/speed trade-off. -->
+										<argument>--compress</argument>
+										<argument>zip-6</argument>
+										<argument>--no-header-files</argument>
+										<argument>--no-man-pages</argument>
+										<argument>--strip-debug</argument>
+										<argument>--output</argument>
+										<argument>${project.build.directory}/jre-image</argument>
+									</arguments>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>
