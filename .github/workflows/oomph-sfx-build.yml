@@ -113,7 +113,7 @@ jobs:
         run: |
           chmod +x packaging/oomph-sfx/create-sfx-unix.sh
           packaging/oomph-sfx/create-sfx-unix.sh \
-            target/biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar \
+            target/biz.aQute.jpm.run-4.0.0.jar \
             target/jre-image \
             target/jpm-${{ matrix.platform }}.run
 
@@ -122,7 +122,7 @@ jobs:
         shell: pwsh
         run: |
           pwsh -File packaging/oomph-sfx/create-sfx-windows.ps1 `
-            -JarFile "target\biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar" `
+            -JarFile "target\biz.aQute.jpm.run-4.0.0.jar" `
             -JreDir  "target\jre-image" `
             -OutFile "target\jpm-${{ matrix.platform }}.bat" `
             -Version "4.0.0"
