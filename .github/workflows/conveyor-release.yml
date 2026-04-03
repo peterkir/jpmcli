@@ -35,6 +35,8 @@ jobs:
   build-jar:
     name: Build fat JAR (Maven)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -69,6 +71,8 @@ jobs:
     name: Conveyor — package for all platforms
     needs: build-jar
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
