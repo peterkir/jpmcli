@@ -1,0 +1,136 @@
+# .github/workflows/conveyor-release.yml
+#
+# Builds the jpmcli fat JAR with Maven, then uses Conveyor to produce
+# native packages for all five platform/arch targets:
+#   windows.amd64  linux.amd64  linux.aarch64  mac.amd64  mac.aarch64
+#
+# Conveyor runs on a single Linux host and cross-packages for all platforms.
+# It downloads and embeds Eclipse Temurin JDK 21 into each package.
+#
+# Outputs (uploaded as workflow artifacts):
+#   conveyor-site/  — directory containing:
+#     jpm-4.0.0-windows-amd64.zip
+#     jpm-4.0.0-linux-amd64.tar.gz
+#     jpm-4.0.0-linux-aarch64.tar.gz
+#     jpm-4.0.0-mac-amd64.zip
+#     jpm-4.0.0-mac-aarch64.zip
+#     download.html
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   CONVEYOR_AGREE_TO_LICENSE  — set to "1" to accept the Conveyor EULA
+#   CONVEYOR_LICENSE_KEY       — paid/OSS license key from hydraulic.dev
+#                                (omit or leave empty for the 30-day trial)
+
+name: Conveyor Release
+
+on:
+  push:
+    branches: ["feature/conveyor-packaging"]
+    tags:     ["v*"]
+  pull_request:
+    branches: ["feature/conveyor-packaging"]
+  workflow_dispatch:
+
+jobs:
+  build-jar:
+    name: Build fat JAR (Maven)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Cache Maven local repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      # Build the executable fat JAR.  bnd-maven-plugin embeds Main-Class in
+      # the manifest; Conveyor reads that header to wire the JVM launcher.
+      - name: Maven package
+        run: ./mvnw -B -Drevision=4.0.0 package -DskipTests
+
+      - name: Upload fat JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpm-jar
+          path: target/biz.aQute.jpm.run-*.jar
+          retention-days: 1
+
+  conveyor-package:
+    name: Conveyor — package for all platforms
+    needs: build-jar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download fat JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: jpm-jar
+          path: target/
+
+      # Install Conveyor CLI.  Pin the version for reproducibility; update as
+      # needed — see https://conveyor.hydraulic.dev/download/ for releases.
+      - name: Install Conveyor
+        run: |
+          CONVEYOR_VERSION="14.3"
+          curl -fsSL \
+            "https://downloads.hydraulic.dev/conveyor/conveyor-${CONVEYOR_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin --strip-components=1 conveyor-${CONVEYOR_VERSION}/conveyor
+          conveyor --version
+
+      # conveyor make site produces packages for all machines listed in
+      # conveyor.conf and writes them to ./output/.
+      - name: Run Conveyor
+        env:
+          CONVEYOR_AGREE_TO_LICENSE: ${{ secrets.CONVEYOR_AGREE_TO_LICENSE }}
+          CONVEYOR_LICENSE_KEY:      ${{ secrets.CONVEYOR_LICENSE_KEY }}
+        run: |
+          conveyor \
+            --passphrase="" \
+            make site
+
+      - name: Upload Conveyor site artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: conveyor-site
+          path: output/
+          retention-days: 30
+
+  # Optional: create a GitHub Release and attach the packages when a tag is pushed.
+  github-release:
+    name: GitHub Release
+    needs: conveyor-package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Conveyor site
+        uses: actions/download-artifact@v4
+        with:
+          name: conveyor-site
+          path: output/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/**
+          generate_release_notes: true

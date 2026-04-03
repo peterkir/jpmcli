@@ -1,0 +1,159 @@
+# .github/workflows/oomph-sfx-build.yml
+#
+# Builds self-extracting jpm launchers for all five platform/arch targets
+# using the Oomph-inspired "stub + appended payload" pattern.
+#
+# Each CI runner performs three steps:
+#   1. Build the fat JAR with Maven.
+#   2. Create a minimal jlink JRE (mvn -Pjlink-sfx).
+#   3. Produce the platform-specific SFX file via the packaging scripts.
+#
+# Output artifacts (uploaded per-platform):
+#   jpm-linux-amd64.run       — self-extracting shell script
+#   jpm-linux-aarch64.run     — self-extracting shell script
+#   jpm-macos-amd64.run       — self-extracting shell script
+#   jpm-macos-aarch64.run     — self-extracting shell script
+#   jpm-windows-amd64.bat     — self-extracting batch file
+#
+# Runners used:
+#   ubuntu-24.04          → Linux x86_64
+#   ubuntu-24.04-arm      → Linux aarch64  (GitHub-hosted ARM runner)
+#   macos-13              → macOS x86_64 (Intel)
+#   macos-latest          → macOS aarch64 (Apple Silicon, M1+)
+#   windows-latest        → Windows x86_64
+
+name: Oomph SFX Build
+
+on:
+  push:
+    branches: ["feature/oomph-sfx-packaging"]
+    tags:     ["v*"]
+  pull_request:
+    branches: ["feature/oomph-sfx-packaging"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build SFX — ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux x86_64 ───────────────────────────────────────────────
+          - os:         ubuntu-24.04
+            platform:   linux-amd64
+            sfx-ext:    run
+            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
+
+          # ── Linux aarch64 ─────────────────────────────────────────────
+          - os:         ubuntu-24.04-arm
+            platform:   linux-aarch64
+            sfx-ext:    run
+            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
+
+          # ── macOS x86_64 (Intel) ───────────────────────────────────────
+          - os:         macos-13
+            platform:   macos-amd64
+            sfx-ext:    run
+            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
+
+          # ── macOS aarch64 (Apple Silicon) ─────────────────────────────
+          - os:         macos-latest
+            platform:   macos-aarch64
+            sfx-ext:    run
+            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
+
+          # ── Windows x86_64 ────────────────────────────────────────────
+          - os:         windows-latest
+            platform:   windows-amd64
+            sfx-ext:    bat
+            sfx-script: packaging/oomph-sfx/create-sfx-windows.ps1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # JDK 21 is required for both Maven and jlink (jlink needs JDK 9+).
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Cache Maven local repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-${{ runner.arch }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-maven-
+
+      # Step 1: Build the fat JAR.
+      - name: Maven package
+        run: ./mvnw -B -Drevision=4.0.0 package -DskipTests
+
+      # Step 2: Create the jlink JRE image via the jlink-sfx Maven profile.
+      # Output: target/jre-image/
+      - name: Create jlink JRE (Unix)
+        if: runner.os != 'Windows'
+        run: ./mvnw -B -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
+
+      - name: Create jlink JRE (Windows)
+        if: runner.os == 'Windows'
+        run: ./mvnw -B -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
+        shell: pwsh
+
+      # Step 3: Produce the SFX file.
+
+      - name: Create SFX (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x packaging/oomph-sfx/create-sfx-unix.sh
+          packaging/oomph-sfx/create-sfx-unix.sh \
+            target/biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar \
+            target/jre-image \
+            target/jpm-${{ matrix.platform }}.run
+
+      - name: Create SFX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pwsh -File packaging/oomph-sfx/create-sfx-windows.ps1 `
+            -JarFile "target\biz.aQute.jpm.run-4.0.0-SNAPSHOT.jar" `
+            -JreDir  "target\jre-image" `
+            -OutFile "target\jpm-${{ matrix.platform }}.bat" `
+            -Version "4.0.0"
+
+      # Upload the SFX as a workflow artifact.
+      - name: Upload SFX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpm-${{ matrix.platform }}
+          path: target/jpm-${{ matrix.platform }}.${{ matrix.sfx-ext }}
+          retention-days: 30
+
+  # Optional: create a GitHub Release when a version tag is pushed.
+  github-release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all SFX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
