@@ -93,6 +93,7 @@ jobs:
 
       # Step 1: Build the fat JAR.
       - name: Maven package
+        shell: bash
         run: ./mvnw -B -Drevision=4.0.0 package -DskipTests
 
       # Step 2: Create the jlink JRE image via the jlink-sfx Maven profile.
@@ -103,8 +104,8 @@ jobs:
 
       - name: Create jlink JRE (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: ./mvnw -B -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
-        shell: pwsh
 
       # Step 3: Produce the SFX file.
 
