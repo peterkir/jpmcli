@@ -6,6 +6,7 @@
 # All jobs run on ubuntu-latest.  Each platform build downloads the correct
 # pre-built Eclipse Temurin 21 JRE from the Adoptium API instead of running
 # jlink on a native runner, so no ARM, macOS, or Windows CI runners are needed.
+# All packaging scripts are plain bash; no PowerShell is required.
 #
 # On every push to main the "latest-main" pre-release is updated so that
 # the GitHub Pages download page always links to the most recent artifacts.
@@ -148,13 +149,13 @@ jobs:
 
       - name: Create SFX (Windows)
         if: matrix.sfx-ext == 'bat'
-        shell: pwsh
         run: |
-          packaging/oomph-sfx/create-sfx-windows.ps1 `
-            -JarFile "target/biz.aQute.jpm.run-4.0.0.jar" `
-            -JreDir  "target/jre-image" `
-            -OutFile "target/jpm-${{ matrix.platform }}.bat" `
-            -Version "4.0.0"
+          chmod +x packaging/oomph-sfx/create-sfx-windows.sh
+          packaging/oomph-sfx/create-sfx-windows.sh \
+            target/biz.aQute.jpm.run-4.0.0.jar \
+            target/jre-image \
+            target/jpm-${{ matrix.platform }}.bat \
+            4.0.0
 
       - name: Upload SFX artifact
         uses: actions/upload-artifact@v4
