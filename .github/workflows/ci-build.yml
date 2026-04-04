@@ -16,10 +16,10 @@ name: CI Build
 
 on:
   push:
-    branches: ["main"]
+    branches: ["master"]
     tags:     ["v*"]
   pull_request:
-    branches: ["main"]
+    branches: ["master"]
   workflow_dispatch:
 
 jobs:
@@ -164,11 +164,13 @@ jobs:
           path: target/jpm-${{ matrix.platform }}.${{ matrix.sfx-ext }}
           retention-days: 30
 
-  # ── Update the rolling "latest-main" pre-release on every main push ───────
+  # ── Update the rolling "latest-main" pre-release on every master push ───────
   snapshot-release:
     name: Update latest-main release
     needs: build-sfx
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
 
     permissions:
