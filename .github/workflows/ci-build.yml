@@ -3,16 +3,13 @@
 # Consolidated CI build: builds self-extracting jpm launchers for all five
 # platform/arch targets and publishes them to a GitHub Release.
 #
+# All jobs run on ubuntu-latest.  Each platform build downloads the correct
+# pre-built Eclipse Temurin 21 JRE from the Adoptium API instead of running
+# jlink on a native runner, so no ARM, macOS, or Windows CI runners are needed.
+#
 # On every push to main the "latest-main" pre-release is updated so that
 # the GitHub Pages download page always links to the most recent artifacts.
 # On a version tag (v*) a proper, versioned GitHub Release is created.
-#
-# Runners used:
-#   ubuntu-24.04          → Linux x86_64
-#   ubuntu-24.04-arm      → Linux aarch64  (GitHub-hosted ARM runner)
-#   macos-13              → macOS x86_64 (Intel)
-#   macos-latest          → macOS aarch64 (Apple Silicon, M1+)
-#   windows-latest        → Windows x86_64
 
 name: CI Build
 
@@ -25,51 +22,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build SFX — ${{ matrix.platform }}
-    runs-on: ${{ matrix.os }}
+  # ── Step 1: Build the fat JAR once ────────────────────────────────────────
+  build-jar:
+    name: Build fat JAR
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # ── Linux x86_64 ───────────────────────────────────────────────
-          - os:         ubuntu-24.04
-            platform:   linux-amd64
-            sfx-ext:    run
-            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
-
-          # ── Linux aarch64 ─────────────────────────────────────────────
-          - os:         ubuntu-24.04-arm
-            platform:   linux-aarch64
-            sfx-ext:    run
-            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
-
-          # ── macOS x86_64 (Intel) ───────────────────────────────────────
-          - os:         macos-13
-            platform:   macos-amd64
-            sfx-ext:    run
-            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
-
-          # ── macOS aarch64 (Apple Silicon) ─────────────────────────────
-          - os:         macos-latest
-            platform:   macos-aarch64
-            sfx-ext:    run
-            sfx-script: packaging/oomph-sfx/create-sfx-unix.sh
-
-          # ── Windows x86_64 ────────────────────────────────────────────
-          - os:         windows-latest
-            platform:   windows-amd64
-            sfx-ext:    bat
-            sfx-script: packaging/oomph-sfx/create-sfx-windows.ps1
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # JDK 21 is required for both Maven and jlink (jlink needs JDK 9+).
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -80,29 +43,102 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-${{ runner.arch }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-maven-
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-
 
-      # Step 1: Build the fat JAR.
       - name: Maven package
-        shell: bash
         run: ./mvnw -B -Drevision=4.0.0 package -DskipTests
 
-      # Step 2: Create the jlink JRE image via the jlink-sfx Maven profile.
-      # Output: target/jre-image/
-      - name: Create jlink JRE (Unix)
-        if: runner.os != 'Windows'
-        run: ./mvnw -B -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
+      - name: Upload fat JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: jpm-jar
+          path: target/biz.aQute.jpm.run-4.0.0.jar
+          retention-days: 1
 
-      - name: Create jlink JRE (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: ./mvnw -B -Drevision=4.0.0 -Pjlink-sfx package -DskipTests
+  # ── Step 2: Build one SFX per target platform ─────────────────────────────
+  build-sfx:
+    name: Build SFX — ${{ matrix.platform }}
+    needs: build-jar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-      # Step 3: Produce the SFX file.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux x86_64 ─────────────────────────────────────────────────
+          - platform:     linux-amd64
+            temurin-os:   linux
+            temurin-arch: x64
+            jre-archive:  tar.gz
+            sfx-ext:      run
+
+          # ── Linux aarch64 ────────────────────────────────────────────────
+          - platform:     linux-aarch64
+            temurin-os:   linux
+            temurin-arch: aarch64
+            jre-archive:  tar.gz
+            sfx-ext:      run
+
+          # ── macOS x86_64 (Intel) ─────────────────────────────────────────
+          - platform:     macos-amd64
+            temurin-os:   mac
+            temurin-arch: x64
+            jre-archive:  tar.gz
+            sfx-ext:      run
+
+          # ── macOS aarch64 (Apple Silicon) ────────────────────────────────
+          - platform:     macos-aarch64
+            temurin-os:   mac
+            temurin-arch: aarch64
+            jre-archive:  tar.gz
+            sfx-ext:      run
+
+          # ── Windows x86_64 ───────────────────────────────────────────────
+          - platform:     windows-amd64
+            temurin-os:   windows
+            temurin-arch: x64
+            jre-archive:  zip
+            sfx-ext:      bat
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download fat JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: jpm-jar
+          path: target/
+
+      # Download the pre-built Temurin 21 JRE for the target platform.
+      # The Adoptium API returns a redirect; curl -L follows it.
+      - name: Download Temurin 21 JRE (${{ matrix.platform }})
+        run: |
+          curl -fL \
+            "https://api.adoptium.net/v3/binary/latest/21/ga/${{ matrix.temurin-os }}/${{ matrix.temurin-arch }}/jre/hotspot/normal/eclipse" \
+            -o "jre.${{ matrix.jre-archive }}"
+
+      - name: Extract JRE (tar.gz)
+        if: matrix.jre-archive == 'tar.gz'
+        run: |
+          mkdir -p /tmp/jre-extract
+          tar -xzf jre.tar.gz -C /tmp/jre-extract
+          find /tmp/jre-extract -maxdepth 1 -mindepth 1 -type d \
+            -exec mv {} target/jre-image \;
+
+      - name: Extract JRE (zip)
+        if: matrix.jre-archive == 'zip'
+        run: |
+          mkdir -p /tmp/jre-extract
+          unzip -q jre.zip -d /tmp/jre-extract
+          find /tmp/jre-extract -maxdepth 1 -mindepth 1 -type d \
+            -exec mv {} target/jre-image \;
 
       - name: Create SFX (Unix)
-        if: runner.os != 'Windows'
+        if: matrix.sfx-ext == 'run'
         run: |
           chmod +x packaging/oomph-sfx/create-sfx-unix.sh
           packaging/oomph-sfx/create-sfx-unix.sh \
@@ -111,16 +147,15 @@ jobs:
             target/jpm-${{ matrix.platform }}.run
 
       - name: Create SFX (Windows)
-        if: runner.os == 'Windows'
+        if: matrix.sfx-ext == 'bat'
         shell: pwsh
         run: |
-          pwsh -File packaging/oomph-sfx/create-sfx-windows.ps1 `
-            -JarFile "target\biz.aQute.jpm.run-4.0.0.jar" `
-            -JreDir  "target\jre-image" `
-            -OutFile "target\jpm-${{ matrix.platform }}.bat" `
+          packaging/oomph-sfx/create-sfx-windows.ps1 `
+            -JarFile "target/biz.aQute.jpm.run-4.0.0.jar" `
+            -JreDir  "target/jre-image" `
+            -OutFile "target/jpm-${{ matrix.platform }}.bat" `
             -Version "4.0.0"
 
-      # Upload the SFX as a workflow artifact.
       - name: Upload SFX artifact
         uses: actions/upload-artifact@v4
         with:
@@ -128,11 +163,10 @@ jobs:
           path: target/jpm-${{ matrix.platform }}.${{ matrix.sfx-ext }}
           retention-days: 30
 
-  # Update the rolling "latest-main" pre-release after every successful push
-  # to main so the GitHub Pages download page always points to fresh artifacts.
+  # ── Update the rolling "latest-main" pre-release on every main push ───────
   snapshot-release:
     name: Update latest-main release
-    needs: build
+    needs: build-sfx
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
@@ -171,10 +205,10 @@ jobs:
           files: artifacts/**
           target_commitish: ${{ github.sha }}
 
-  # Create a proper, versioned GitHub Release when a version tag is pushed.
+  # ── Create a versioned GitHub Release on a v* tag push ───────────────────
   github-release:
     name: GitHub Release
-    needs: build
+    needs: build-sfx
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 

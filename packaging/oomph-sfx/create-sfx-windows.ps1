@@ -34,8 +34,8 @@ if (-not (Test-Path $JarFile)) { throw "JAR not found: $JarFile" }
 if (-not (Test-Path $JreDir))  { throw "JRE dir not found: $JreDir" }
 
 # ── Build payload ZIP ──────────────────────────────────────────────────────
-$staging  = Join-Path $env:TEMP "jpm-sfx-$([System.IO.Path]::GetRandomFileName())"
-$zipPath  = Join-Path $env:TEMP "jpm-payload-$([System.IO.Path]::GetRandomFileName()).zip"
+$staging  = Join-Path ([System.IO.Path]::GetTempPath()) "jpm-sfx-$([System.IO.Path]::GetRandomFileName())"
+$zipPath  = Join-Path ([System.IO.Path]::GetTempPath()) "jpm-payload-$([System.IO.Path]::GetRandomFileName()).zip"
 try {
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item $JarFile (Join-Path $staging "jpm.jar")
