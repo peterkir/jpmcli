@@ -7,15 +7,15 @@
 name: Deploy doc on GitHub Pages
 
 on:
-  # Runs after the CI Build workflow completes on the main branch
+  # Runs after the CI Build workflow completes on the master branch
   workflow_run:
     workflows: ["CI Build"]
-    branches: ["main"]
+    branches: ["master"]
     types: [completed]
 
-  # Runs on pushes targeting the main branch
+  # Runs on pushes targeting the master branch
   push:
-    branches: ["main"]
+    branches: ["master"]
 
   # Allows manual trigger from the Actions tab
   workflow_dispatch:
