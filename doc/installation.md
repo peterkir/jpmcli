@@ -8,10 +8,18 @@ Each launcher bundles a complete JRE — **no Java installation is required**.
 
 ## Linux / macOS
 
+Choose the launcher that matches your platform:
+
+| Platform | Architecture | Download URL |
+|---|---|---|
+| Linux | x86_64 (amd64) | `jpm-linux-amd64.run` |
+| Linux | aarch64 (ARM) | `jpm-linux-aarch64.run` |
+| macOS | x86_64 (Intel) | `jpm-macos-amd64.run` |
+| macOS | aarch64 (Apple Silicon) | `jpm-macos-aarch64.run` |
+
 ```bash
-# Download the launcher (replace <platform> with linux-amd64, linux-aarch64,
-# macos-amd64, or macos-aarch64)
-curl -Lo jpm.run https://github.com/peterkir/jpmcli/releases/download/latest-main/jpm-<platform>.run
+# Example: Linux x86_64
+curl -Lo jpm.run https://github.com/peterkir/jpmcli/releases/download/latest-main/jpm-linux-amd64.run
 
 # Make it executable
 chmod +x jpm.run
